@@ -45,6 +45,7 @@ mm_renderer="*res://addons/material_maker/engine/multi_renderer.gd"
 mm_sdf_builder="*res://addons/material_maker/sdf_builder/sdf_builder.tscn"
 mm_preprocessor="*res://addons/material_maker/engine/preprocessor.gd"
 Html5="*res://material_maker/html5.gd"
+mcp_bridge="*res://addons/mcp_bridge/mcp_bridge.gd"
 
 [debug]
 
