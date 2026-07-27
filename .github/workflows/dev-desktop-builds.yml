@@ -3,6 +3,7 @@ name: "Build Material Maker"
 on:
   push:
     branches: [master]
+    tags: ["v*"]
   pull_request:
     branches: [master]
   workflow_dispatch:
@@ -100,7 +101,7 @@ jobs:
           name: documentation
           path: ./material_maker/doc/_build/html
       - name: Upload Windows Artifact 🚀
-        if: ${{ github.event.inputs.steam == 'false' && github.event.inputs.artifacts == 'true' }}
+        if: ${{ (github.event.inputs.steam == 'false' && github.event.inputs.artifacts == 'true') || startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v6
         with:
           name: windows_snapshot
@@ -112,7 +113,7 @@ jobs:
           name: windows_snapshot
           path: build/${{ env.EXPORT_NAME }}_${{ env.MM_RELEASE }}_windows
       - name: Upload Linux Artifact 🚀
-        if: ${{ github.event.inputs.steam == 'false' && github.event.inputs.artifacts == 'true' }}
+        if: ${{ (github.event.inputs.steam == 'false' && github.event.inputs.artifacts == 'true') || startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v6
         with:
           name: linux_snapshot
@@ -231,7 +232,7 @@ jobs:
           xcrun notarytool submit ./build/mac/material_maker_${MM_RELEASE}${PACKAGE_SUFFIX}.dmg --apple-id $APPLE_ID --password $NOTARYTOOL_APP_PASSWORD --team-id $APPLE_TEAM_ID --wait
           xcrun stapler staple -v ./build/mac/material_maker_${MM_RELEASE}${PACKAGE_SUFFIX}.dmg
       - name: Upload Mac OSX Artifact 🚀
-        if: ${{ github.event.inputs.steam == 'false' && github.event.inputs.artifacts == 'true' }}
+        if: ${{ (github.event.inputs.steam == 'false' && github.event.inputs.artifacts == 'true') || startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v6
         with:
           name: macos_snapshot
@@ -277,3 +278,31 @@ jobs:
           depot2Path: macos
           depot3Path: linux
           releaseBranch: prerelease
+  release:
+    name: GitHub Release 🏷️
+    needs: export_macos
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Get Windows build 🚀
+        uses: actions/download-artifact@v8
+        with:
+          name: windows_snapshot
+          path: build
+      - name: Get Linux build 🚀
+        uses: actions/download-artifact@v8
+        with:
+          name: linux_snapshot
+          path: build
+      - name: Get macOS build 🚀
+        uses: actions/download-artifact@v8
+        with:
+          name: macos_snapshot
+          path: build
+      - name: Create release 🏷️
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/*
+          generate_release_notes: true
