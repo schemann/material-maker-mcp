@@ -13,6 +13,7 @@ extends Node
 const DEFAULT_PORT : int = 8765
 const HOST : String = "127.0.0.1"
 const BRIDGE_VERSION : String = "0.1.0"
+const LIBRARY_PATH : String = "res://material_maker/library/base.json"
 
 var server : TCPServer
 # Array of { peer: StreamPeerTCP, buffer: String }
@@ -54,6 +55,86 @@ func _register_actions() -> void:
 	register_action("ping", _action_ping, "Check that the bridge is alive.")
 	register_action("version", _action_version, "Get Material Maker / Godot / bridge version info.")
 
+	# --- Documentation interface -------------------------------------------------
+	register_action("list_actions", _action_list_actions,
+			"List all bridge actions with argument signatures, descriptions and implementation status.")
+	register_action("describe", _action_describe,
+			"Documentation entry point. topic: actions | action (name=...) | node_types (category=...) | node_type (name=...).",
+			[ { name = "topic", type = "string", required = true }, { name = "name", type = "string" }, { name = "category", type = "string" } ])
+	register_action("list_node_types", _action_list_node_types,
+			"List material node types from the library, with category paths.",
+			[ { name = "category", type = "string", description = "Optional category prefix filter, e.g. 'Noise'" } ])
+	register_action("describe_node_type", _action_describe_node_type,
+			"Full documentation of one node type: parameters (type, default, range, enum values), inputs, outputs, descriptions.",
+			[ { name = "name", type = "string", required = true } ])
+
+	# --- Material tools (skeletons, not implemented yet) -------------------------
+	# All of these operate on the current project's data layer:
+	#   mm_globals.main_window.get_current_graph_edit() -> MMGraphEdit
+	#     (material_maker/panels/graph_edit/graph_edit.gd)
+	#   graph_edit.top_generator / graph_edit.generator -> MMGenGraph
+	#     (addons/material_maker/engine/nodes/gen_graph.gd)
+	register_action("get_graph", _action_not_implemented,
+			"Serialize the current material graph (nodes, connections, parameters).")
+	# TODO: graph_edit.generator.serialize() (MMGenGraph._serialize, gen_graph.gd)
+	register_action("new_material", _action_not_implemented,
+			"Open a new empty material project tab.")
+	# TODO: mm_globals.main_window.new_material() (material_maker/main_window.gd)
+	register_action("load_material", _action_not_implemented,
+			"Load a .ptex material from disk into a project tab.",
+			[ { name = "path", type = "string", required = true } ])
+	# TODO: mm_loader.load_gen(path) (addons/material_maker/engine/loader.gd), then open in tab
+	register_action("save_material", _action_not_implemented,
+			"Save the current material to disk.",
+			[ { name = "path", type = "string" } ])
+	# TODO: graph_edit.save_file(path) (graph_edit.gd)
+	register_action("add_node", _action_not_implemented,
+			"Create a node of a given type in the current graph.",
+			[ { name = "type", type = "string", required = true }, { name = "parameters", type = "object" }, { name = "position", type = "array" } ])
+	# TODO: await mm_loader.create_gen({type=..., parameters=...}) + graph.add_generator(gen)
+	#       (+ graph_edit.update_graph(...) for the UI, or graph_edit.create_nodes(...) with undo)
+	register_action("remove_node", _action_not_implemented,
+			"Remove a node from the current graph.",
+			[ { name = "node", type = "string", required = true } ])
+	# TODO: graph.remove_generator(graph.get_node(NodePath(name))) (gen_graph.gd)
+	register_action("connect_nodes", _action_not_implemented,
+			"Connect an output port of one node to an input port of another.",
+			[ { name = "from", type = "string", required = true }, { name = "from_port", type = "int", required = true },
+			  { name = "to", type = "string", required = true }, { name = "to_port", type = "int", required = true } ])
+	# TODO: graph.connect_children(from_gen, from_port, to_gen, to_port) (gen_graph.gd, includes loop check)
+	register_action("disconnect_nodes", _action_not_implemented,
+			"Remove a connection between two nodes.",
+			[ { name = "from", type = "string", required = true }, { name = "from_port", type = "int" },
+			  { name = "to", type = "string", required = true }, { name = "to_port", type = "int" } ])
+	# TODO: graph.disconnect_children_by_name(...) (gen_graph.gd)
+	register_action("set_parameter", _action_not_implemented,
+			"Set a parameter of a node (triggers re-render).",
+			[ { name = "node", type = "string", required = true }, { name = "name", type = "string", required = true }, { name = "value", required = true } ])
+	# TODO: gen.set_parameter(name, MMType.deserialize_value(value)) (gen_base.gd)
+	register_action("get_parameter", _action_not_implemented,
+			"Get a parameter value of a node.",
+			[ { name = "node", type = "string", required = true }, { name = "name", type = "string", required = true } ])
+	# TODO: MMType.serialize_value(gen.get_parameter(name)) (gen_base.gd)
+	register_action("render_node", _action_not_implemented,
+			"Render one output of a node to an image file, return the file path.",
+			[ { name = "node", type = "string", required = true }, { name = "output", type = "int" },
+			  { name = "size", type = "array", description = "[width, height], default [512, 512]" },
+			  { name = "path", type = "string", required = true } ])
+	# TODO: (await gen.render_output(output, Vector2i(w, h))).save_png(path) (gen_base.gd)
+	register_action("export_material", _action_not_implemented,
+			"Export the current material with an export profile (textures for a target engine).",
+			[ { name = "prefix", type = "string", required = true }, { name = "profile", type = "string", required = true }, { name = "size", type = "int" } ])
+	# TODO: graph_edit.get_material_node().export_material(prefix, profile, size) (gen_material.gd);
+	#       profiles via get_export_profiles(); headless reference: start.gd export_files()
+	register_action("render_variations", _action_not_implemented,
+			"Batch-render variations of the current material: sweep parameter value lists and/or seeds, render/export each combination.",
+			[ { name = "variations", type = "object", required = true, description = "{ node: { param: [v1, v2, ...] } }" },
+			  { name = "seeds", type = "array", description = "Optional seed values to sweep" },
+			  { name = "output_dir", type = "string", required = true }, { name = "size", type = "int" } ])
+	# TODO: loop over parameter combinations -> set_parameter / gen.seed_int -> render_node or
+	#       export_material; collect result paths. Anchors: gen_base.gd set_parameter/render_output,
+	#       gen_material.gd export_material.
+
 
 func _action_ping(_args : Dictionary) -> Dictionary:
 	return { pong = true }
@@ -66,6 +147,101 @@ func _action_version(_args : Dictionary) -> Dictionary:
 		godot_version = Engine.get_version_info().string,
 		bridge_version = BRIDGE_VERSION,
 	}
+
+
+func _action_not_implemented(_args : Dictionary) -> Dictionary:
+	return _error("not implemented yet (skeleton, see TODO in addons/mcp_bridge/mcp_bridge.gd)")
+
+
+# --- Documentation interface ---------------------------------------------------
+
+func _action_list_actions(_args : Dictionary) -> Array:
+	var rv : Array = []
+	for action_name in actions.keys():
+		var a : Dictionary = actions[action_name]
+		rv.append({
+			name = action_name,
+			description = a.description,
+			args = a.args,
+			implemented = a.handler != _action_not_implemented,
+		})
+	return rv
+
+
+func _action_describe(args : Dictionary):
+	var topic : String = str(args.get("topic", ""))
+	match topic:
+		"actions":
+			return _action_list_actions(args)
+		"action":
+			var action_name : String = str(args.get("name", ""))
+			if not actions.has(action_name):
+				return _error("unknown action '%s'" % action_name)
+			var a : Dictionary = actions[action_name]
+			return { name = action_name, description = a.description, args = a.args,
+					implemented = a.handler != _action_not_implemented }
+		"node_types":
+			return _action_list_node_types(args)
+		"node_type":
+			return _action_describe_node_type(args)
+		_:
+			return _error("unknown topic '%s' (use actions|action|node_types|node_type)" % topic)
+
+
+func _action_list_node_types(args : Dictionary):
+	var file : FileAccess = FileAccess.open(LIBRARY_PATH, FileAccess.READ)
+	if file == null:
+		return _error("cannot read library %s" % LIBRARY_PATH)
+	var json := JSON.new()
+	if json.parse(file.get_as_text()) != OK or not json.data is Dictionary:
+		return _error("cannot parse library %s" % LIBRARY_PATH)
+	var category_filter : String = str(args.get("category", "")).to_lower()
+	var rv : Array = []
+	for item in json.data.get("lib", []):
+		if not item is Dictionary or not item.has("type"):
+			continue
+		var category : String = str(item.get("tree_item", ""))
+		if category_filter != "" and not category.to_lower().begins_with(category_filter):
+			continue
+		# Deliberately compact (no icon_data / parameters) to keep responses small.
+		rv.append({
+			type = item.type,
+			label = item.get("display_name", item.get("name", "")),
+			category = category,
+		})
+	return rv
+
+
+func _action_describe_node_type(args : Dictionary):
+	var type_name : String = str(args.get("name", ""))
+	if not mm_loader.predefined_generators.has(type_name):
+		return _error("unknown node type '%s'" % type_name)
+	var definition : Dictionary = mm_loader.predefined_generators[type_name]
+	var rv : Dictionary = { type = type_name }
+	var shader_model : Dictionary = definition.get("shader_model", {})
+	for k in [ "name", "shortdesc", "longdesc" ]:
+		if shader_model.has(k):
+			rv[k] = shader_model[k]
+	rv.parameters = _doc_entries(shader_model.get("parameters", []))
+	rv.inputs = _doc_entries(shader_model.get("inputs", []))
+	rv.outputs = _doc_entries(shader_model.get("outputs", []))
+	return rv
+
+
+# Extracts only the documentation-relevant keys from parameter/input/output
+# definitions (drops GLSL code, widgets and other bulky fields).
+func _doc_entries(entries : Array) -> Array:
+	const KEEP : Array = [ "name", "label", "type", "default", "min", "max", "step", "values", "shortdesc" ]
+	var rv : Array = []
+	for e in entries:
+		if not e is Dictionary:
+			continue
+		var d : Dictionary = {}
+		for k in KEEP:
+			if e.has(k):
+				d[k] = e[k]
+		rv.append(d)
+	return rv
 
 
 # --- TCP server ---------------------------------------------------------------
