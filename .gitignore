@@ -26,3 +26,6 @@ build/
 .godot/
 *.orig
 *.rej
+
+# Local MCP client config (per-developer absolute paths)
+.mcp.json
