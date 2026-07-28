@@ -8,8 +8,11 @@ Material Maker (this addon)  <--JSON-lines/TCP-->  mcp_bridge_host (Python)  <--
 ```
 
 The addon is loaded as an **autoload** (one line in `project.godot`) and
-touches no other core files. At runtime it injects an "MCP" menu into the
-main window's menu bar (start/stop server, status display).
+touches no other core files. At runtime it injects an "MCP" menu (on
+macOS into the global menu bar, elsewhere into the main window's menu
+bar) with a server toggle and status, plus an **"MCP" tab into the app's
+Preferences dialog** (autostart checkbox, port, status/version info).
+Settings are stored in `user://mm_config.ini` via `mm_globals.config`.
 
 ## Protocol
 

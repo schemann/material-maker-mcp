@@ -32,10 +32,6 @@ var global_status_index : int = -1
 var menu_guard_elapsed : float = 0.0
 
 var current_port : int = 0
-var settings_dialog : AcceptDialog
-var settings_status_label : Label
-var port_spinbox : SpinBox
-var autostart_checkbox : CheckBox
 
 
 func _ready() -> void:
@@ -300,13 +296,15 @@ func is_running() -> bool:
 
 
 func _process(_delta : float) -> void:
-	# The app rebuilds its global menu on various occasions (wiping ours),
-	# so check once per second that it is still there.
-	if using_global_menu:
-		menu_guard_elapsed += _delta
-		if menu_guard_elapsed >= 1.0:
-			menu_guard_elapsed = 0.0
+	# Once per second: re-add our global menu if the app rebuilt its menus
+	# (which clears it), and inject our tab into a newly opened Preferences
+	# dialog.
+	menu_guard_elapsed += _delta
+	if menu_guard_elapsed >= 1.0:
+		menu_guard_elapsed = 0.0
+		if using_global_menu:
 			_ensure_global_menu()
+		_check_preferences_dialog()
 	if server == null:
 		return
 	while server.is_connection_available():
@@ -436,7 +434,7 @@ func _on_global_menu_item(tag) -> void:
 		"enabled":
 			_toggle_server()
 		"settings":
-			_show_settings_dialog()
+			_open_preferences()
 	_update_menu_status()
 
 
@@ -447,7 +445,7 @@ func _on_menu_id_pressed(id : int) -> void:
 		0:
 			_toggle_server()
 		1:
-			_show_settings_dialog()
+			_open_preferences()
 	_update_menu_status()
 
 
@@ -477,51 +475,96 @@ func _update_menu_status() -> void:
 			popup.set_item_checked(idx, is_running())
 
 
-# --- Settings dialog ---------------------------------------------------------------
+# --- Preferences integration ------------------------------------------------------
+# Injects an "MCP" tab into the app's Preferences dialog at runtime. The
+# preferences mechanism (preferences.gd) calls init_from_config() /
+# update_config() on every control in the dialog, so our option controls
+# integrate with Apply/OK/Cancel without any core changes.
 
-func _show_settings_dialog() -> void:
-	if settings_dialog == null:
-		_build_settings_dialog()
-	if is_running():
-		settings_status_label.text = "Status: running on %s:%d (%d client(s))" % [HOST, current_port, clients.size()]
-	else:
-		settings_status_label.text = "Status: stopped"
-	port_spinbox.value = get_port()
-	autostart_checkbox.button_pressed = is_autostart_enabled()
-	settings_dialog.popup_centered()
+class MCPAutostartOption:
+	extends HBoxContainer
+	var checkbox : CheckBox
+	func _init() -> void:
+		var label : Label = Label.new()
+		label.text = "Start MCP server automatically"
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		add_child(label)
+		checkbox = CheckBox.new()
+		add_child(checkbox)
+	func init_from_config(c : ConfigFile) -> void:
+		checkbox.button_pressed = c.get_value("config", "mcp_bridge_autostart", true)
+	func update_config(c : ConfigFile) -> void:
+		c.set_value("config", "mcp_bridge_autostart", checkbox.button_pressed)
 
 
-func _build_settings_dialog() -> void:
-	settings_dialog = AcceptDialog.new()
-	settings_dialog.title = "MCP Bridge"
+class MCPPortOption:
+	extends HBoxContainer
+	var spinbox : SpinBox
+	func _init() -> void:
+		var label : Label = Label.new()
+		label.text = "Port"
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		add_child(label)
+		spinbox = SpinBox.new()
+		spinbox.min_value = 1024
+		spinbox.max_value = 65535
+		add_child(spinbox)
+	func init_from_config(c : ConfigFile) -> void:
+		spinbox.value = c.get_value("config", "mcp_bridge_port", 8765)
+	func update_config(c : ConfigFile) -> void:
+		c.set_value("config", "mcp_bridge_port", int(spinbox.value))
+
+
+func _open_preferences() -> void:
+	if mm_globals.main_window != null:
+		mm_globals.main_window.edit_preferences()
+		_check_preferences_dialog.call_deferred()
+
+
+func _check_preferences_dialog() -> void:
+	if mm_globals.main_window == null:
+		return
+	for w in mm_globals.main_window.get_children():
+		if w is Window and w.has_method("edit_preferences") and not w.has_meta("mcp_bridge_injected"):
+			_inject_preferences_tab(w)
+
+
+func _inject_preferences_tab(dialog : Window) -> void:
+	var tabs : TabContainer = dialog.get_node_or_null("HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer")
+	if tabs == null:
+		return
+	dialog.set_meta("mcp_bridge_injected", true)
+	var scroll : ScrollContainer = ScrollContainer.new()
+	scroll.name = "MCP"
 	var vbox : VBoxContainer = VBoxContainer.new()
-	settings_dialog.add_child(vbox)
-	settings_status_label = Label.new()
-	vbox.add_child(settings_status_label)
-	var port_row : HBoxContainer = HBoxContainer.new()
-	vbox.add_child(port_row)
-	var port_label : Label = Label.new()
-	port_label.text = "Port: "
-	port_row.add_child(port_label)
-	port_spinbox = SpinBox.new()
-	port_spinbox.min_value = 1024
-	port_spinbox.max_value = 65535
-	port_row.add_child(port_spinbox)
-	autostart_checkbox = CheckBox.new()
-	autostart_checkbox.text = "Start server automatically"
-	vbox.add_child(autostart_checkbox)
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(vbox)
+	var status : Label = Label.new()
+	if is_running():
+		status.text = "Status: server running on %s:%d" % [HOST, current_port]
+	else:
+		status.text = "Status: server stopped (toggle it in the MCP menu)"
+	vbox.add_child(status)
+	var version_label : Label = Label.new()
+	version_label.text = "Bridge version: %s" % BRIDGE_VERSION
+	vbox.add_child(version_label)
+	vbox.add_child(HSeparator.new())
+	vbox.add_child(MCPAutostartOption.new())
+	vbox.add_child(MCPPortOption.new())
 	var note : Label = Label.new()
-	note.text = "Changing the port restarts the server if it is running."
+	note.text = "The external MCP host (mcp_bridge_host) connects to this port.\nChanging the port restarts the server if it is running."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vbox.add_child(note)
-	settings_dialog.confirmed.connect(_on_settings_confirmed)
-	mm_globals.main_window.add_child(settings_dialog)
+	tabs.add_child(scroll)
+	# Defer so the preferences dialog picks up our controls when it
+	# initializes its own (edit_preferences() runs update_controls first).
+	dialog.update_controls.call_deferred(scroll)
+	if dialog.has_signal("config_changed"):
+		dialog.config_changed.connect(_on_preferences_changed)
 
 
-func _on_settings_confirmed() -> void:
-	var new_port : int = int(port_spinbox.value)
-	mm_globals.set_config("mcp_bridge_port", new_port)
-	mm_globals.set_config("mcp_bridge_autostart", autostart_checkbox.button_pressed)
-	mm_globals.config.save("user://mm_config.ini")
+func _on_preferences_changed() -> void:
+	var new_port : int = get_port()
 	if is_running() and new_port != current_port:
 		stop_server()
 		start_server(new_port)
