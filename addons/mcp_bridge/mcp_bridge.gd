@@ -87,64 +87,50 @@ func _register_actions() -> void:
 			"Full documentation of one node type: parameters (type, default, range, enum values), inputs, outputs, descriptions.",
 			[ { name = "name", type = "string", required = true } ])
 
-	# --- Material tools (skeletons, not implemented yet) -------------------------
-	# All of these operate on the current project's data layer:
+	# --- Material tools ------------------------------------------------------------
+	# All of these operate on the current project's data layer via
 	#   mm_globals.main_window.get_current_graph_edit() -> MMGraphEdit
 	#     (material_maker/panels/graph_edit/graph_edit.gd)
-	#   graph_edit.top_generator / graph_edit.generator -> MMGenGraph
-	#     (addons/material_maker/engine/nodes/gen_graph.gd)
-	register_action("get_graph", _action_not_implemented,
+	register_action("get_graph", _action_get_graph,
 			"Serialize the current material graph (nodes, connections, parameters).")
-	# TODO: graph_edit.generator.serialize() (MMGenGraph._serialize, gen_graph.gd)
-	register_action("new_material", _action_not_implemented,
+	register_action("new_material", _action_new_material,
 			"Open a new empty material project tab.")
-	# TODO: mm_globals.main_window.new_material() (material_maker/main_window.gd)
-	register_action("load_material", _action_not_implemented,
+	register_action("load_material", _action_load_material,
 			"Load a .ptex material from disk into a project tab.",
 			[ { name = "path", type = "string", required = true } ])
-	# TODO: mm_loader.load_gen(path) (addons/material_maker/engine/loader.gd), then open in tab
-	register_action("save_material", _action_not_implemented,
+	register_action("save_material", _action_save_material,
 			"Save the current material to disk.",
 			[ { name = "path", type = "string" } ])
-	# TODO: graph_edit.save_file(path) (graph_edit.gd)
-	register_action("add_node", _action_not_implemented,
+	register_action("add_node", _action_add_node,
 			"Create a node of a given type in the current graph.",
 			[ { name = "type", type = "string", required = true }, { name = "parameters", type = "object" }, { name = "position", type = "array" } ])
-	# TODO: await mm_loader.create_gen({type=..., parameters=...}) + graph.add_generator(gen)
-	#       (+ graph_edit.update_graph(...) for the UI, or graph_edit.create_nodes(...) with undo)
-	register_action("remove_node", _action_not_implemented,
+	register_action("remove_node", _action_remove_node,
 			"Remove a node from the current graph.",
 			[ { name = "node", type = "string", required = true } ])
-	# TODO: graph.remove_generator(graph.get_node(NodePath(name))) (gen_graph.gd)
-	register_action("connect_nodes", _action_not_implemented,
+	register_action("connect_nodes", _action_connect_nodes,
 			"Connect an output port of one node to an input port of another.",
 			[ { name = "from", type = "string", required = true }, { name = "from_port", type = "int", required = true },
 			  { name = "to", type = "string", required = true }, { name = "to_port", type = "int", required = true } ])
-	# TODO: graph.connect_children(from_gen, from_port, to_gen, to_port) (gen_graph.gd, includes loop check)
-	register_action("disconnect_nodes", _action_not_implemented,
+	register_action("disconnect_nodes", _action_disconnect_nodes,
 			"Remove a connection between two nodes.",
 			[ { name = "from", type = "string", required = true }, { name = "from_port", type = "int" },
 			  { name = "to", type = "string", required = true }, { name = "to_port", type = "int" } ])
-	# TODO: graph.disconnect_children_by_name(...) (gen_graph.gd)
-	register_action("set_parameter", _action_not_implemented,
+	register_action("set_parameter", _action_set_parameter,
 			"Set a parameter of a node (triggers re-render).",
 			[ { name = "node", type = "string", required = true }, { name = "name", type = "string", required = true }, { name = "value", required = true } ])
-	# TODO: gen.set_parameter(name, MMType.deserialize_value(value)) (gen_base.gd)
-	register_action("get_parameter", _action_not_implemented,
+	register_action("get_parameter", _action_get_parameter,
 			"Get a parameter value of a node.",
 			[ { name = "node", type = "string", required = true }, { name = "name", type = "string", required = true } ])
-	# TODO: MMType.serialize_value(gen.get_parameter(name)) (gen_base.gd)
-	register_action("render_node", _action_not_implemented,
+	register_action("render_node", _action_render_node,
 			"Render one output of a node to an image file, return the file path.",
 			[ { name = "node", type = "string", required = true }, { name = "output", type = "int" },
 			  { name = "size", type = "array", description = "[width, height], default [512, 512]" },
 			  { name = "path", type = "string", required = true } ])
-	# TODO: (await gen.render_output(output, Vector2i(w, h))).save_png(path) (gen_base.gd)
-	register_action("export_material", _action_not_implemented,
+	register_action("export_material", _action_export_material,
 			"Export the current material with an export profile (textures for a target engine).",
 			[ { name = "prefix", type = "string", required = true }, { name = "profile", type = "string", required = true }, { name = "size", type = "int" } ])
-	# TODO: graph_edit.get_material_node().export_material(prefix, profile, size) (gen_material.gd);
-	#       profiles via get_export_profiles(); headless reference: start.gd export_files()
+
+	# --- Skeletons (not implemented yet) -------------------------------------------
 	register_action("render_variations", _action_not_implemented,
 			"Batch-render variations of the current material: sweep parameter value lists and/or seeds, render/export each combination.",
 			[ { name = "variations", type = "object", required = true, description = "{ node: { param: [v1, v2, ...] } }" },
@@ -170,6 +156,182 @@ func _action_version(_args : Dictionary) -> Dictionary:
 
 func _action_not_implemented(_args : Dictionary) -> Dictionary:
 	return _error("not implemented yet (skeleton, see TODO in addons/mcp_bridge/mcp_bridge.gd)")
+
+
+# --- Material tools ---------------------------------------------------------------
+# Data layer anchors: MMGraphEdit (material_maker/panels/graph_edit/graph_edit.gd),
+# MMGenGraph / MMGenBase (addons/material_maker/engine/nodes/), MMLoader (loader.gd).
+
+func _get_graph_edit():
+	if mm_globals.main_window == null:
+		return null
+	return mm_globals.main_window.get_current_graph_edit()
+
+
+func _get_generator(graph_edit, node_name : String):
+	if graph_edit == null or graph_edit.generator == null:
+		return null
+	return graph_edit.generator.get_node_or_null(NodePath(node_name))
+
+
+func _action_get_graph(_args : Dictionary):
+	var graph_edit = _get_graph_edit()
+	if graph_edit == null or graph_edit.top_generator == null:
+		return _error("no material project open")
+	return graph_edit.top_generator.serialize()
+
+
+func _action_new_material(_args : Dictionary):
+	if mm_globals.main_window == null:
+		return _error("main window not ready")
+	mm_globals.main_window.new_material()
+	return { created = true }
+
+
+func _action_load_material(args : Dictionary):
+	if mm_globals.main_window == null:
+		return _error("main window not ready")
+	var path : String = str(args.get("path", ""))
+	if path == "":
+		return _error("missing 'path'")
+	if not await mm_globals.main_window.do_load_material(path):
+		return _error("failed to load '%s'" % path)
+	return { loaded = path }
+
+
+func _action_save_material(args : Dictionary):
+	var graph_edit = _get_graph_edit()
+	if graph_edit == null:
+		return _error("no material project open")
+	var path : String = str(args.get("path", ""))
+	if path == "":
+		path = graph_edit.save_path
+	if path == "":
+		return _error("no path given and the project has no save path")
+	if not await graph_edit.save_file(path):
+		return _error("save failed")
+	return { saved = path }
+
+
+func _action_add_node(args : Dictionary):
+	var graph_edit = _get_graph_edit()
+	if graph_edit == null:
+		return _error("no material project open")
+	var type_name : String = str(args.get("type", ""))
+	if type_name == "":
+		return _error("missing 'type'")
+	var data : Dictionary = { type = type_name, parameters = args.get("parameters", {}) }
+	var position := Vector2(0, 0)
+	if args.get("position", []) is Array and args.position.size() == 2:
+		position = Vector2(float(args.position[0]), float(args.position[1]))
+	var nodes : Array = await graph_edit.create_nodes(data, position)
+	if nodes.is_empty():
+		return _error("failed to create node of type '%s'" % type_name)
+	return { name = nodes[0].generator.name, type = type_name }
+
+
+func _action_remove_node(args : Dictionary):
+	var graph_edit = _get_graph_edit()
+	if graph_edit == null:
+		return _error("no material project open")
+	var node_name : String = str(args.get("node", ""))
+	var ui_node = graph_edit.get_node_or_null("node_"+node_name)
+	if ui_node == null:
+		return _error("unknown node '%s'" % node_name)
+	graph_edit.remove_node(ui_node)
+	return { removed = node_name }
+
+
+func _action_connect_nodes(args : Dictionary):
+	var graph_edit = _get_graph_edit()
+	if graph_edit == null:
+		return _error("no material project open")
+	for k in [ "from", "from_port", "to", "to_port" ]:
+		if not args.has(k):
+			return _error("missing '%s'" % k)
+	var from_ui : String = "node_"+str(args.from)
+	var to_ui : String = "node_"+str(args.to)
+	if graph_edit.get_node_or_null(from_ui) == null or graph_edit.get_node_or_null(to_ui) == null:
+		return _error("unknown node '%s' or '%s'" % [str(args.from), str(args.to)])
+	if graph_edit.do_connect_node(from_ui, int(args.from_port), to_ui, int(args.to_port)):
+		return { connected = true }
+	return _error("connection failed (check port indexes/types)")
+
+
+func _action_disconnect_nodes(args : Dictionary):
+	var graph_edit = _get_graph_edit()
+	if graph_edit == null:
+		return _error("no material project open")
+	for k in [ "from", "from_port", "to", "to_port" ]:
+		if not args.has(k):
+			return _error("missing '%s'" % k)
+	var from_ui : String = "node_"+str(args.from)
+	var to_ui : String = "node_"+str(args.to)
+	if graph_edit.get_node_or_null(from_ui) == null or graph_edit.get_node_or_null(to_ui) == null:
+		return _error("unknown node '%s' or '%s'" % [str(args.from), str(args.to)])
+	if graph_edit.do_disconnect_node(from_ui, int(args.from_port), to_ui, int(args.to_port)):
+		return { disconnected = true }
+	return _error("no such connection")
+
+
+func _action_set_parameter(args : Dictionary):
+	var graph_edit = _get_graph_edit()
+	var gen = _get_generator(graph_edit, str(args.get("node", "")))
+	if gen == null:
+		return _error("unknown node '%s'" % str(args.get("node", "")))
+	var parameter_name : String = str(args.get("name", ""))
+	if parameter_name == "" or not args.has("value"):
+		return _error("missing 'name' or 'value'")
+	gen.set_parameter(parameter_name, MMType.deserialize_value(args.value))
+	return { node = gen.name, name = parameter_name, value = MMType.serialize_value(gen.get_parameter(parameter_name)) }
+
+
+func _action_get_parameter(args : Dictionary):
+	var graph_edit = _get_graph_edit()
+	var gen = _get_generator(graph_edit, str(args.get("node", "")))
+	if gen == null:
+		return _error("unknown node '%s'" % str(args.get("node", "")))
+	var parameter_name : String = str(args.get("name", ""))
+	return { node = gen.name, name = parameter_name, value = MMType.serialize_value(gen.get_parameter(parameter_name)) }
+
+
+func _action_render_node(args : Dictionary):
+	var graph_edit = _get_graph_edit()
+	var gen = _get_generator(graph_edit, str(args.get("node", "")))
+	if gen == null:
+		return _error("unknown node '%s'" % str(args.get("node", "")))
+	var size := Vector2i(512, 512)
+	if args.get("size", []) is Array and args.size.size() == 2:
+		size = Vector2i(int(args.size[0]), int(args.size[1]))
+	var output : int = int(args.get("output", 0))
+	var path : String = str(args.get("path", ""))
+	if path == "":
+		return _error("missing 'path'")
+	var image : Image = await gen.render_output(output, size)
+	if image == null:
+		return _error("render failed")
+	var err : Error = image.save_png(path)
+	if err != OK:
+		return _error("cannot save image to '%s' (error %d)" % [path, err])
+	return { path = path, size = [size.x, size.y] }
+
+
+func _action_export_material(args : Dictionary):
+	var graph_edit = _get_graph_edit()
+	if graph_edit == null:
+		return _error("no material project open")
+	var material_node : MMGenMaterial = graph_edit.get_material_node()
+	if material_node == null:
+		return _error("no material node in current project")
+	var prefix : String = str(args.get("prefix", ""))
+	var profile : String = str(args.get("profile", ""))
+	if prefix == "" or profile == "":
+		return _error("missing 'prefix' or 'profile'")
+	var profiles : Array = material_node.get_export_profiles()
+	if profiles.find(profile) == -1:
+		return _error("unknown profile '%s' (available: %s)" % [profile, ", ".join(profiles)])
+	await material_node.export_material(prefix, profile, int(args.get("size", 0)))
+	return { exported = prefix, profile = profile }
 
 
 # --- Documentation interface ---------------------------------------------------
