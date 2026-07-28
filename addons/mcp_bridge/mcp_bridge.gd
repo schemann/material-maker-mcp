@@ -353,9 +353,9 @@ func _handle_line(client : Dictionary, line : String) -> void:
 		response.ok = false
 		response.error = "unknown action '%s'" % action_name
 	else:
-		var result = actions[action_name].handler.call(args)
-		if result is GDScriptFunctionState:
-			result = await result
+		# Awaiting a non-coroutine value returns it immediately, so this
+		# works for both synchronous and asynchronous handlers.
+		var result = await actions[action_name].handler.call(args)
 		if result is Dictionary and result.has("__error"):
 			response.ok = false
 			response.error = result.__error
@@ -556,6 +556,12 @@ func _inject_preferences_tab(dialog : Window) -> void:
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vbox.add_child(note)
 	tabs.add_child(scroll)
+	# The Preferences dialog navigates via a category sidebar tree that is
+	# built once from the TabContainer children (preferences_tree.gd), so
+	# rebuild it to make our tab selectable.
+	var tree : Tree = dialog.get_node_or_null("HSplitContainer/PreferenceCategory/Tree")
+	if tree != null and tree.has_method("update_tree"):
+		tree.update_tree()
 	# Defer so the preferences dialog picks up our controls when it
 	# initializes its own (edit_preferences() runs update_controls first).
 	dialog.update_controls.call_deferred(scroll)

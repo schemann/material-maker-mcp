@@ -23,8 +23,8 @@ One JSON object per line, both directions:
 - Response: `{ "ok": true, "result": ..., "id": ... }` or
             `{ "ok": false, "error": "...", "id": ... }`
 
-Handlers may be async (`await`) — the dispatcher awaits
-`GDScriptFunctionState` results before responding.
+Handlers may be async (`await`) — the dispatcher awaits every handler
+call (awaiting a non-coroutine value returns it immediately).
 
 ## Actions
 
