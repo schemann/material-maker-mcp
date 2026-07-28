@@ -210,7 +210,7 @@ jobs:
         run: |
           codesign -s "Rodolphe Suescun" --force --timestamp --options runtime --deep "./build/mac/Material Maker.app"
       - name: Create DMG archive 🔧
-        if: ${{ github.event.inputs.steam == 'false' }}
+        if: ${{ github.event.inputs.steam != 'true' }}
         run: |
           brew untap aws/tap || true
           brew install imagemagick
