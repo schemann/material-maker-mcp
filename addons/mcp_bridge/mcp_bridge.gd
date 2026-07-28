@@ -23,10 +23,25 @@ var actions : Dictionary = {}
 var menu_button : MenuButton
 var status_item_id : int = -1
 
+# macOS global menu (DisplayServer) support
+const GLOBAL_MENU : String = "_main/MCP"
+var using_global_menu : bool = false
+var global_menu_main_count : int = -1
+var global_enabled_index : int = -1
+var global_status_index : int = -1
+var menu_guard_elapsed : float = 0.0
+
+var current_port : int = 0
+var settings_dialog : AcceptDialog
+var settings_status_label : Label
+var port_spinbox : SpinBox
+var autostart_checkbox : CheckBox
+
 
 func _ready() -> void:
 	_register_actions()
-	start_server(get_port())
+	if is_autostart_enabled():
+		start_server(get_port())
 	_inject_menu()
 
 
@@ -38,7 +53,15 @@ func get_port() -> int:
 	for arg in OS.get_cmdline_args():
 		if arg.begins_with("--mcp-port="):
 			return int(arg.trim_prefix("--mcp-port="))
+	if mm_globals.has_config("mcp_bridge_port"):
+		return int(mm_globals.get_config("mcp_bridge_port"))
 	return DEFAULT_PORT
+
+
+func is_autostart_enabled() -> bool:
+	if mm_globals.has_config("mcp_bridge_autostart"):
+		return bool(mm_globals.get_config("mcp_bridge_autostart"))
+	return true
 
 
 # --- Action registry ---------------------------------------------------------
@@ -256,6 +279,7 @@ func start_server(port : int) -> bool:
 		server = null
 		_update_menu_status()
 		return false
+	current_port = port
 	print("mcp_bridge: listening on %s:%d" % [HOST, port])
 	_update_menu_status()
 	return true
@@ -276,6 +300,13 @@ func is_running() -> bool:
 
 
 func _process(_delta : float) -> void:
+	# The app rebuilds its global menu on various occasions (wiping ours),
+	# so check once per second that it is still there.
+	if using_global_menu:
+		menu_guard_elapsed += _delta
+		if menu_guard_elapsed >= 1.0:
+			menu_guard_elapsed = 0.0
+			_ensure_global_menu()
 	if server == null:
 		return
 	while server.is_connection_available():
@@ -347,47 +378,151 @@ func _error(message : String) -> Dictionary:
 
 
 # --- Menu injection -----------------------------------------------------------
-# Adds an "MCP" menu to the main window menu bar at runtime, without touching
-# main_window.tscn / main_window.gd.
+# Adds an "MCP" menu at runtime, without touching main_window.tscn/.gd.
+# On macOS the app menus live in the DisplayServer global menu bar, so the
+# in-app MenuButton would be invisible there; use the global menu instead.
 
 func _inject_menu() -> void:
 	while mm_globals.main_window == null:
 		await get_tree().process_frame
-	var menu_container : Control = mm_globals.main_window.get_node_or_null("VBoxContainer/TopBar/Menu")
-	if menu_container == null:
-		return
-	menu_button = MenuButton.new()
-	menu_button.text = "MCP"
-	menu_button.flat = false
-	var popup : PopupMenu = menu_button.get_popup()
-	popup.add_item("Start server", 0)
-	popup.add_item("Stop server", 1)
-	popup.add_separator()
-	popup.add_item("", 100)
-	popup.set_item_disabled(popup.get_item_index(100), true)
-	status_item_id = 100
-	popup.id_pressed.connect(_on_menu_id_pressed)
-	menu_container.add_child(menu_button)
+	if DisplayServer.has_feature(DisplayServer.FEATURE_GLOBAL_MENU):
+		using_global_menu = true
+		_rebuild_global_menu()
+	else:
+		var menu_container : Control = mm_globals.main_window.get_node_or_null("VBoxContainer/TopBar/Menu")
+		if menu_container == null:
+			return
+		menu_button = MenuButton.new()
+		menu_button.text = "MCP"
+		menu_button.flat = false
+		var popup : PopupMenu = menu_button.get_popup()
+		popup.add_check_item("Server enabled", 0)
+		popup.add_item("Settings...", 1)
+		popup.add_separator()
+		popup.add_item("", 100)
+		popup.set_item_disabled(popup.get_item_index(100), true)
+		status_item_id = 100
+		popup.id_pressed.connect(_on_menu_id_pressed)
+		menu_container.add_child(menu_button)
+	print("mcp_bridge: menu injected (global_menu=%s)" % str(using_global_menu))
 	_update_menu_status()
 
+
+# --- macOS global menu (DisplayServer) -----------------------------------------
+
+func _rebuild_global_menu() -> void:
+	DisplayServer.global_menu_clear(GLOBAL_MENU)
+	DisplayServer.global_menu_add_submenu_item("_main", "MCP", GLOBAL_MENU)
+	var cb : Callable = _on_global_menu_item
+	global_enabled_index = DisplayServer.global_menu_add_check_item(GLOBAL_MENU, "Server enabled", cb, cb, "enabled")
+	DisplayServer.global_menu_add_item(GLOBAL_MENU, "Settings...", cb, cb, "settings")
+	DisplayServer.global_menu_add_separator(GLOBAL_MENU)
+	global_status_index = DisplayServer.global_menu_add_item(GLOBAL_MENU, "", Callable(), Callable(), "status")
+	DisplayServer.global_menu_set_item_disabled(GLOBAL_MENU, global_status_index, true)
+	global_menu_main_count = DisplayServer.global_menu_get_item_count("_main")
+
+
+func _ensure_global_menu() -> void:
+	# main_window.do_update_menus() clears "_main" whenever the app rebuilds
+	# its menus; if our submenu vanished with it, add it back.
+	var count : int = DisplayServer.global_menu_get_item_count("_main")
+	if count < global_menu_main_count:
+		_rebuild_global_menu()
+		_update_menu_status()
+
+
+func _on_global_menu_item(tag) -> void:
+	match str(tag):
+		"enabled":
+			_toggle_server()
+		"settings":
+			_show_settings_dialog()
+	_update_menu_status()
+
+
+# --- Shared menu logic -----------------------------------------------------------
 
 func _on_menu_id_pressed(id : int) -> void:
 	match id:
 		0:
-			start_server(get_port())
+			_toggle_server()
 		1:
-			stop_server()
+			_show_settings_dialog()
 	_update_menu_status()
 
 
-func _update_menu_status() -> void:
-	if menu_button == null or status_item_id == -1:
-		return
-	var popup : PopupMenu = menu_button.get_popup()
-	var idx : int = popup.get_item_index(status_item_id)
-	if idx == -1:
-		return
+func _toggle_server() -> void:
 	if is_running():
-		popup.set_item_text(idx, "Server running on %s:%d" % [HOST, get_port()])
+		stop_server()
 	else:
-		popup.set_item_text(idx, "Server stopped")
+		start_server(get_port())
+
+
+func _update_menu_status() -> void:
+	var status_text : String = "Server stopped"
+	if is_running():
+		status_text = "Server running on %s:%d" % [HOST, current_port]
+	if using_global_menu:
+		if global_status_index != -1:
+			DisplayServer.global_menu_set_item_text(GLOBAL_MENU, global_status_index, status_text)
+		if global_enabled_index != -1:
+			DisplayServer.global_menu_set_item_checked(GLOBAL_MENU, global_enabled_index, is_running())
+	elif menu_button != null:
+		var popup : PopupMenu = menu_button.get_popup()
+		var idx : int = popup.get_item_index(status_item_id)
+		if idx != -1:
+			popup.set_item_text(idx, status_text)
+		idx = popup.get_item_index(0)
+		if idx != -1:
+			popup.set_item_checked(idx, is_running())
+
+
+# --- Settings dialog ---------------------------------------------------------------
+
+func _show_settings_dialog() -> void:
+	if settings_dialog == null:
+		_build_settings_dialog()
+	if is_running():
+		settings_status_label.text = "Status: running on %s:%d (%d client(s))" % [HOST, current_port, clients.size()]
+	else:
+		settings_status_label.text = "Status: stopped"
+	port_spinbox.value = get_port()
+	autostart_checkbox.button_pressed = is_autostart_enabled()
+	settings_dialog.popup_centered()
+
+
+func _build_settings_dialog() -> void:
+	settings_dialog = AcceptDialog.new()
+	settings_dialog.title = "MCP Bridge"
+	var vbox : VBoxContainer = VBoxContainer.new()
+	settings_dialog.add_child(vbox)
+	settings_status_label = Label.new()
+	vbox.add_child(settings_status_label)
+	var port_row : HBoxContainer = HBoxContainer.new()
+	vbox.add_child(port_row)
+	var port_label : Label = Label.new()
+	port_label.text = "Port: "
+	port_row.add_child(port_label)
+	port_spinbox = SpinBox.new()
+	port_spinbox.min_value = 1024
+	port_spinbox.max_value = 65535
+	port_row.add_child(port_spinbox)
+	autostart_checkbox = CheckBox.new()
+	autostart_checkbox.text = "Start server automatically"
+	vbox.add_child(autostart_checkbox)
+	var note : Label = Label.new()
+	note.text = "Changing the port restarts the server if it is running."
+	vbox.add_child(note)
+	settings_dialog.confirmed.connect(_on_settings_confirmed)
+	mm_globals.main_window.add_child(settings_dialog)
+
+
+func _on_settings_confirmed() -> void:
+	var new_port : int = int(port_spinbox.value)
+	mm_globals.set_config("mcp_bridge_port", new_port)
+	mm_globals.set_config("mcp_bridge_autostart", autostart_checkbox.button_pressed)
+	mm_globals.config.save("user://mm_config.ini")
+	if is_running() and new_port != current_port:
+		stop_server()
+		start_server(new_port)
+	_update_menu_status()
